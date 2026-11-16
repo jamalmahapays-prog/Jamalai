@@ -1,0 +1,8 @@
+{
+  "name": "MyAI Pro",
+  "description": "Bilingual RTL/LTR Dark Premium AI productivity suite with Gemini & multi-provider AI Chat, Writer, Translator, Summarizer, Coding Assistant, Image Studio, Document Assistant, Web Search, Voice Assistant, and Smart Email Composer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

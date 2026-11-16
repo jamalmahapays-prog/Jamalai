@@ -1,0 +1,238 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default deny everything
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Hardened Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function hasValidTimestampsOnCreate(data) {
+      return data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function hasValidTimestampsOnUpdate(data) {
+      return data.createdAt == existing().createdAt &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // --- Entity Validation Blueprints ---
+    function isValidUserProfile(data) {
+      return data.userId == request.auth.uid &&
+             data.displayName is string && data.displayName.size() >= 0 && data.displayName.size() <= 120 &&
+             data.email is string && data.email.size() >= 0 && data.email.size() <= 200 &&
+             (!('photoUrl' in data) || data.photoUrl == null || (data.photoUrl is string && data.photoUrl.size() <= 500)) &&
+             data.preferredLanguage in ['ar', 'en'] &&
+             data.preferredModel is string && data.preferredModel.size() >= 1 && data.preferredModel.size() <= 60 &&
+             data.totalRequests is int && data.totalRequests >= 0 &&
+             data.totalImagesGenerated is int && data.totalImagesGenerated >= 0 &&
+             data.totalDocumentsAnalyzed is int && data.totalDocumentsAnalyzed >= 0 &&
+             data.totalEmailsAssisted is int && data.totalEmailsAssisted >= 0;
+    }
+
+    function isValidConversation(data) {
+      return data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+             data.modelId is string && data.modelId.size() >= 1 && data.modelId.size() <= 60 &&
+             data.lastMessagePreview is string && data.lastMessagePreview.size() <= 300 &&
+             data.messageCount is int && data.messageCount >= 0;
+    }
+
+    function isValidChatMessage(data, conversationId) {
+      return data.userId == request.auth.uid &&
+             data.conversationId == conversationId &&
+             data.role in ['user', 'model'] &&
+             data.content is string && data.content.size() >= 1 && data.content.size() <= 20000 &&
+             data.modelId is string && data.modelId.size() <= 60 &&
+             (!('attachmentName' in data) || data.attachmentName == null || (data.attachmentName is string && data.attachmentName.size() <= 200));
+    }
+
+    function isValidDocumentRecord(data) {
+      return data.userId == request.auth.uid &&
+             data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 200 &&
+             data.mimeType is string && data.mimeType.size() >= 1 && data.mimeType.size() <= 100 &&
+             data.fileSizeBytes is int && data.fileSizeBytes >= 0 && data.fileSizeBytes <= 20971520 &&
+             data.extractedTextPreview is string && data.extractedTextPreview.size() <= 15000 &&
+             data.aiSummary is string && data.aiSummary.size() <= 15000;
+    }
+
+    function isValidEmailDraft(data) {
+      return data.userId == request.auth.uid &&
+             data.recipient is string && data.recipient.size() <= 200 &&
+             data.subject is string && data.subject.size() <= 300 &&
+             data.body is string && data.body.size() <= 15000 &&
+             data.priority in ['high', 'medium', 'low'] &&
+             data.summary is string && data.summary.size() <= 5000 &&
+             data.extractedTasks is list && data.extractedTasks.size() <= 20 &&
+             (data.extractedTasks.size() == 0 || data.extractedTasks[0] is string) &&
+             data.status in ['draft', 'analyzed', 'dispatched'];
+    }
+
+    function isValidToolHistoryEntry(data) {
+      return data.userId == request.auth.uid &&
+             data.toolType in ['writer', 'translator', 'summarizer', 'coding', 'search', 'voice'] &&
+             data.prompt is string && data.prompt.size() >= 1 && data.prompt.size() <= 8000 &&
+             data.result is string && data.result.size() <= 20000 &&
+             data.modelId is string && data.modelId.size() >= 1 && data.modelId.size() <= 60;
+    }
+
+    // --- Collection Match Rules ---
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'email', 'preferredLanguage', 'preferredModel', 'totalRequests', 'totalImagesGenerated', 'totalDocumentsAnalyzed', 'totalEmailsAssisted', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'photoUrl', 'preferredLanguage', 'preferredModel', 'totalRequests', 'totalImagesGenerated', 'totalDocumentsAnalyzed', 'totalEmailsAssisted', 'createdAt', 'updatedAt']) &&
+                       hasValidTimestampsOnCreate(incoming()) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == existing().userId &&
+                       hasValidTimestampsOnUpdate(incoming()) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'photoUrl', 'preferredLanguage', 'preferredModel', 'totalRequests', 'totalImagesGenerated', 'totalDocumentsAnalyzed', 'totalEmailsAssisted', 'updatedAt']);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // Conversations
+      match /conversations/{conversationId} {
+        allow get: if isOwner(userId) && isValidId(conversationId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(conversationId) &&
+                         incoming().keys().hasAll(['userId', 'title', 'modelId', 'lastMessagePreview', 'messageCount', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'modelId', 'lastMessagePreview', 'messageCount', 'createdAt', 'updatedAt']) &&
+                         hasValidTimestampsOnCreate(incoming()) &&
+                         isValidConversation(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(conversationId) &&
+                         incoming().userId == existing().userId &&
+                         hasValidTimestampsOnUpdate(incoming()) &&
+                         isValidConversation(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'modelId', 'lastMessagePreview', 'messageCount', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(conversationId);
+
+        // Messages inside a conversation
+        match /messages/{messageId} {
+          allow get: if isOwner(userId) && isValidId(messageId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(conversationId) &&
+                           isValidId(messageId) &&
+                           incoming().keys().hasAll(['userId', 'conversationId', 'role', 'content', 'modelId', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['userId', 'conversationId', 'role', 'content', 'modelId', 'attachmentName', 'createdAt', 'updatedAt']) &&
+                           hasValidTimestampsOnCreate(incoming()) &&
+                           isValidChatMessage(incoming(), conversationId) &&
+                           exists(/databases/$(database)/documents/users/$(userId)/conversations/$(conversationId));
+
+          allow update: if isOwner(userId) &&
+                           isValidId(conversationId) &&
+                           isValidId(messageId) &&
+                           incoming().userId == existing().userId &&
+                           incoming().conversationId == existing().conversationId &&
+                           hasValidTimestampsOnUpdate(incoming()) &&
+                           isValidChatMessage(incoming(), conversationId) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['content', 'modelId', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(messageId);
+        }
+      }
+
+      // Documents
+      match /documents/{documentId} {
+        allow get: if isOwner(userId) && isValidId(documentId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(documentId) &&
+                         incoming().keys().hasAll(['userId', 'fileName', 'mimeType', 'fileSizeBytes', 'extractedTextPreview', 'aiSummary', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'fileName', 'mimeType', 'fileSizeBytes', 'extractedTextPreview', 'aiSummary', 'createdAt', 'updatedAt']) &&
+                         hasValidTimestampsOnCreate(incoming()) &&
+                         isValidDocumentRecord(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(documentId) &&
+                         incoming().userId == existing().userId &&
+                         hasValidTimestampsOnUpdate(incoming()) &&
+                         isValidDocumentRecord(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['aiSummary', 'extractedTextPreview', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(documentId);
+      }
+
+      // Email Drafts
+      match /emailDrafts/{draftId} {
+        allow get: if isOwner(userId) && isValidId(draftId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(draftId) &&
+                         incoming().keys().hasAll(['userId', 'recipient', 'subject', 'body', 'priority', 'summary', 'extractedTasks', 'status', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'recipient', 'subject', 'body', 'priority', 'summary', 'extractedTasks', 'status', 'createdAt', 'updatedAt']) &&
+                         hasValidTimestampsOnCreate(incoming()) &&
+                         isValidEmailDraft(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(draftId) &&
+                         incoming().userId == existing().userId &&
+                         hasValidTimestampsOnUpdate(incoming()) &&
+                         isValidEmailDraft(incoming()) &&
+                         existing().status != 'dispatched' &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['recipient', 'subject', 'body', 'priority', 'summary', 'extractedTasks', 'status', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(draftId);
+      }
+
+      // Tool History
+      match /toolHistory/{entryId} {
+        allow get: if isOwner(userId) && isValidId(entryId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(entryId) &&
+                         incoming().keys().hasAll(['userId', 'toolType', 'prompt', 'result', 'modelId', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'toolType', 'prompt', 'result', 'modelId', 'createdAt', 'updatedAt']) &&
+                         hasValidTimestampsOnCreate(incoming()) &&
+                         isValidToolHistoryEntry(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(entryId) &&
+                         incoming().userId == existing().userId &&
+                         hasValidTimestampsOnUpdate(incoming()) &&
+                         isValidToolHistoryEntry(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['result', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(entryId);
+      }
+    }
+  }
+}

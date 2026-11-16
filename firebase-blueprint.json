@@ -1,0 +1,130 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile, bilingual preferences, AI model selection, and usage metrics.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "email": { "type": "string", "description": "User Google email" },
+        "photoUrl": { "type": "string", "description": "Optional profile image URL" },
+        "preferredLanguage": { "type": "string", "enum": ["ar", "en"], "description": "Active UI language" },
+        "preferredModel": { "type": "string", "description": "Preferred AI model ID" },
+        "totalRequests": { "type": "integer", "description": "Total AI prompt requests" },
+        "totalImagesGenerated": { "type": "integer", "description": "Total Image Studio creations" },
+        "totalDocumentsAnalyzed": { "type": "integer", "description": "Total analyzed documents" },
+        "totalEmailsAssisted": { "type": "integer", "description": "Total AI email actions" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["userId", "displayName", "email", "preferredLanguage", "preferredModel", "totalRequests", "totalImagesGenerated", "totalDocumentsAnalyzed", "totalEmailsAssisted", "createdAt", "updatedAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "An AI Chat conversation thread.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "modelId": { "type": "string" },
+        "lastMessagePreview": { "type": "string" },
+        "messageCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "modelId", "lastMessagePreview", "messageCount", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "A single message inside a conversation thread.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "model"] },
+        "content": { "type": "string" },
+        "modelId": { "type": "string" },
+        "attachmentName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "conversationId", "role", "content", "modelId", "createdAt", "updatedAt"]
+    },
+    "DocumentRecord": {
+      "title": "DocumentRecord",
+      "description": "Uploaded or imported user document metadata, preview, and AI analysis.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "fileName": { "type": "string" },
+        "mimeType": { "type": "string" },
+        "fileSizeBytes": { "type": "integer" },
+        "extractedTextPreview": { "type": "string" },
+        "aiSummary": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "fileName", "mimeType", "fileSizeBytes", "extractedTextPreview", "aiSummary", "createdAt", "updatedAt"]
+    },
+    "EmailDraft": {
+      "title": "EmailDraft",
+      "description": "AI-analyzed or AI-composed email draft with extracted tasks and priority.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "recipient": { "type": "string" },
+        "subject": { "type": "string" },
+        "body": { "type": "string" },
+        "priority": { "type": "string", "enum": ["high", "medium", "low"] },
+        "summary": { "type": "string" },
+        "extractedTasks": { "type": "array" },
+        "status": { "type": "string", "enum": ["draft", "analyzed", "dispatched"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "recipient", "subject", "body", "priority", "summary", "extractedTasks", "status", "createdAt", "updatedAt"]
+    },
+    "ToolHistoryEntry": {
+      "title": "ToolHistoryEntry",
+      "description": "Saved output from Writer, Translator, Summarizer, Coding, Web Search, or Voice tools.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "toolType": { "type": "string", "enum": ["writer", "translator", "summarizer", "coding", "search", "voice"] },
+        "prompt": { "type": "string" },
+        "result": { "type": "string" },
+        "modelId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "toolType", "prompt", "result", "modelId", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Per-user profile, settings, and usage counters."
+    },
+    "/users/{userId}/conversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "User's AI Chat threads."
+    },
+    "/users/{userId}/conversations/{conversationId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Messages belonging to a user's AI Chat thread."
+    },
+    "/users/{userId}/documents/{documentId}": {
+      "schema": { "$ref": "#/entities/DocumentRecord" },
+      "description": "User's analyzed documents and AI summaries."
+    },
+    "/users/{userId}/emailDrafts/{draftId}": {
+      "schema": { "$ref": "#/entities/EmailDraft" },
+      "description": "User's AI email drafts and priority/task analyses."
+    },
+    "/users/{userId}/toolHistory/{entryId}": {
+      "schema": { "$ref": "#/entities/ToolHistoryEntry" },
+      "description": "User's AI tool execution history."
+    }
+  }
+}
